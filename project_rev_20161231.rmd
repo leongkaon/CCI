@@ -1,0 +1,358 @@
+---
+title: "消費者信心指數之分析"
+author: "許筱翎104354002 簡于閔104354019 梁家安104354031"
+date: "December 29, 2016"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, cache = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(zoo)
+library(urca)
+library(DT)
+library(dygraphs)
+library(stringr)
+library(forecast)
+```
+
+```{r echo=FALSE,message=FALSE,warning=FALSE}
+path <- '/home/leongkaon/Documents/time_series_course/消費者信心指數_20161224匯出.csv'
+x = read.csv(path,fileEncoding = 'big5')
+
+#物件註解：
+# x:原資料
+# x1:原資料刪除1999及2000季資料
+# x3:一次差分x1的數值
+```
+
+## 研究動機
+
++  近年來經濟是台灣人最擔憂問題之一，社會蔓延著一股悲觀的氛圍
+
++  我們想透過消費者信心指數（Consumer Confidence 
+Index）來評估整個社會環境中消費者對經濟的評價與期待，檢視這些擔憂究竟只是部分族群被放大後的聲音，還是社會確實普遍瀰漫著一股對未來經濟的不確定?
+
++  利用時間序列分析未來可能的走勢
+
+## 消費者信心指數(CCI)
+
++  消費者信心指數是指消費者對目前經濟的評價及預期未來經濟趨勢的指標
+
++  通過抽樣調查，量化民眾對經濟及個人財務的感覺，其數值越高，表示民眾對經濟情況越樂觀
+
++  點數於0~200間
+    - 100-200 ➔ 樂觀預期
+    -   0-100 ➔ 信心保守。
+
++  由於消費者對經濟的信心會影響消費活動，故消費者信心指數為總體經濟的其中一項重要指標
+
+# 資料介紹
+
+## 資料來源
+
++ TEJ資料庫 
+    - CCI消費者信心指數(EB18)
+
++ 1999年1月~2016年11月，共199筆。
+
+
+
+##時間序列圖
+
+```{r echo=FALSE,message=FALSE,warning=FALSE}
+
+x = read.csv(path,fileEncoding = 'big5')
+x$年月 = as.yearmon(x$年月,"%Y/%m")
+x = x[199:1,]
+x = x[-c(1:8),]
+plot(x$年月,x$數值, type = "l", main = "消費者信心指數(2001/01~2015/11)",xlab="",ylab="")
+abline(h = mean(x$數值), col = "red")
+# abline(h = median(x$數值), col = "blue")
+text(x = 2015.5, y = mean(x$數值)-3, col = "red", labels = paste("平均數",round(mean(x$數值),2)))
+# text(x = 2016, y = median(x$數值)+3, labels = paste("中位數",round(median(x$數值),2)), col = "blue")
+text(x = 2010.25 + 1.7, y = min(x$數值), "2009/02 最低點48.42", col = "dodgerblue4")
+points(x = 2009.12, y = min(x$數值))
+text(x = 2015.33 - 2.8, y = max(x$數值), "2015/04 最高點92.93", col = "dodgerblue4")
+points(x = 2015.23, y = max(x$數值))
+```
+
+##盒狀圖
+
+```{r,echo=FALSE,message=FALSE,warning=FALSE}
+##
+summary(x$數值)
+##
+par(family="STKaiti")
+boxplot(x$數值, main = "Boxplot", horizontal = TRUE)
+abline(v = mean(x$數值), col = "red")
+abline(v = median(x$數值), col = "blue")
+text(x = mean(x$數值)-3, y = 0.6, labels = paste("平均數\n",round(mean(x$數值),2)), col = "red")
+text(x = median(x$數值)+3, y = 0.6, labels = paste("中位數\n",round(median(x$數值),2)), col = "blue")
+```
+
+
+# 分析過程
+
+##Box-Jenkins Model Section三步驟
+
++ Identification Stage
+    + 畫圖
+    + Unit Root Test
+    + ACF
+    + PACF
++ Estimation Stage
+    + ARIMA(p,d,q)
++ Diagnostic Stage
+    + AIC
+    + BIC
+    + Q-statistics
+
+
+##刪除1999及2000的季資料
+
+```{r echo=FALSE,message=FALSE,warning=FALSE}
+#########################################################################################
+
+## 我決定先drop 1999及2000的季資料
+x = read.csv(path,fileEncoding = 'big5')
+x[,1] <- gsub('/','',x$年月)
+x[,1] <- paste0(x[,1],'01')
+x[,1] <- as.Date(as.character(x$年月),'%Y%m%d')
+x<-x[,-3]
+row.names(x) <- x[,1]
+x<- x[191:1,]
+dygraph(x, main = "時間序列圖") %>% dyRangeSelector(dateWindow = c("2001-01-01", "2016-11-01"))
+```
+
+##Unit Root Test
+
+### Dickey-Fuller Test
+
+$H_0:有單根$ , $H_1:無單根$
+
+```{r}
+kab = data.frame(cbind(c('trend','drift','none'),c('0.1743','0.1300','0.7026')))
+colnames(kab) = c('method','p-value')
+knitr::kable(kab,align = 'c')
+        
+```
+
+<br>
+
+三次單根檢定都不拒絕H0 ➔ 非定態
+
+
+##Unit Root Test
+
+###Phillips-Perron Test
+
+$H_0:有單根$ , $H_1:無單根$
+
+```{r echo=FALSE,message=FALSE,warning=FALSE}
+x = read.csv(path,fileEncoding = 'big5')[,1:2]
+x1 <- x[191:1,]
+rownames(x1) = 1:191
+PP.test(x1$數值) # p-value = 0.5127 應該係非定態，要差分先可以做落去
+```
+
+p-value = 0.5127 ➔ Do not reject $H_0$ ➔ 非定態 ➔ 差分
+
+##考慮一次差分
+
+```{r echo=FALSE,message=FALSE,warning=FALSE}
+# 考慮一次差分,後項減前項
+x2 <- x1[,2]
+x3 = x2[-191] - x2[-1]
+x3 <- as.ts(x3)
+plot(x3,xlab="",ylab='',type="l",main="差分後時間序列圖")
+abline(h=0,col="black",lty=2)
+```
+
+##差分後的Unit Root Test
+
+### Dickey-Fuller Test
+
+$H_0:有單根$ , $H_1:無單根$
+
+```{r }
+# unit root test
+x2 <- as.data.frame(x2)
+x2 <- x2[-191,] - x2[-1,]
+
+# summary(ur.df(x2,type = 'trend', lags = 1)) # %>% summary # (份表係點睇?呢度既lag又係乜?)➔H0:unit root,有unit root表示非定態
+kab = data.frame(cbind(c('trend','drift','none'),c('0.0000','0.0000','0.0000')))
+colnames(kab) = c('method','p-value')
+knitr::kable(kab,align = 'c')
+
+```
+
+<br>
+
+Reject $H_0$ ➔ 拒絕單根假設
+
+##差分後的Unit Root Test
+
+###Phillips-Perron Test
+
+$H_0:有單根$ , $H_1:無單根$
+
+```{r }
+PP.test(x3)
+```
+
+p-value = 0.01 ➔ Reject $H_0$ ➔ 拒絕單根假設
+
+##ACF
+
+```{r}
+acf(x3, lag.max = 30, main='ACF')
+```
+
+##PACF
+
+```{r}
+pacf(x3, lag.max = 30, main='PACF')
+```
+
+##資料切割
+
+Training ➔ 前179筆(94%)
+
+Testing ➔ 最後12筆(6%)
+
+
+##選出三個候選model
+分別是：ARMA(0,0)、ARMA(2,2)、ARMA(2,4)
+
+```{r echo=FALSE,warning=FALSE,message=FALSE}
+x2 <- x1[1:179,2]
+x3 <- x2[-1]-x2[-171]
+# ARIMA(0,1,0)
+m1 <- arima(x2, order = c(0,1,0), method = "ML") 
+# ARIMA(2,1,2)
+m2 <- arima(x2, order = c(2,1,2), method = "ML")
+# ARIMA(2,1,4)
+m3 <- arima(x2, order = c(2,1,4), method = "ML")
+
+data <- data.frame(項目=c('AIC','BIC','pvalue(Q(18))','pvalue(Q(12))'),
+                     model1=c(AIC(m1),BIC(m1),0.0153,0.1752),
+                     model2=c(AIC(m2),BIC(m2),0.0708,0.4187),
+                     model3=c(AIC(m3),BIC(m3),0.1660,0.2096))
+colnames(data) <- c("項目","ARMA(0,0)","ARMA(2,2)","ARMA(2,4)")
+knitr::kable(data,align = 'c')
+
+```
+
+
+##Residual Diagnostic
+
+```{r}
+model = Arima(x2, order = c(2,1,4))
+```
+
+###ACF & PACF of Residuals
+
+```{r}
+par(mfrow=c(1,2))
+acf(model$residuals)
+pacf(model$residuals)
+par(mfrow=c(1,1))
+```
+
+```{r}
+PP.test(model$residuals) #拒絕殘差為單根的假設
+Box.test(model$residuals,lag = 1,type = "Ljung-Box") #殘差序列沒有自我相關
+```
+
+
+##配適值與實際值比較
+
+```{r}
+tmp = data.frame(yearMonth = as.yearmon(as.character(x1[1:179,1]),format = "%Y/%m"), 
+                 realValue = x1[1:179,2], 
+                 fittedValue = fitted.Arima(model))
+
+tmp %>% ggplot() +
+        geom_line(aes(x = yearMonth, y = realValue, group = 1, colour = "實際值")) + 
+        geom_line(aes(x = yearMonth, y = fittedValue, group = 1, colour = "配適值"), linetype = 2 ) +
+        scale_colour_manual(name="",values=c(實際值="black",配適值="firebrick1"))+
+        theme(legend.position = "bottom") +
+        ggtitle('配適值與實際值比較')+
+        xlab("")+ylab("")
+
+plot(tmp$yearMonth,tmp$realValue,main = "配適值與實際值比較",xlab="",ylab="", type = "l")
+lines(tmp$yearMonth,tmp$fittedValue, col = "red", lty = 2)
+legend("bottomright",legend = c('實際值','配適值'), lty = 1:2, col = c("black","red"),cex=1.2)
+
+```
+
+
+##預測值與實際值比較(95%C.I.)
+
+```{r}
+tmp = data.frame(yearMonth = as.yearmon(as.character(x1[180:191,1]),format = "%Y/%m"), 
+                 realValue = x1[180:191,2], 
+                 fittedValue = forecast(model,h=12,level = 95)$mean,
+                 fittedLower = as.numeric(forecast(model,h=12,level = 95)$lower),
+                 fittedUpper = as.numeric(forecast(model,h=12,level = 95)$upper))
+tmp %>% ggplot() +
+        # ribbon要放上層，因為圖型疊加, 除非set alpha
+        geom_ribbon(aes(x = yearMonth, ymin = fittedLower, ymax = fittedUpper), fill = "deepskyblue3", alpha = 0.3) +
+        geom_line(aes(x = yearMonth, y = realValue, group = 1, colour = "實際值"), size = 1) + 
+        geom_line(aes(x = yearMonth, y = fittedValue, group = 1, colour = "預測值"), size = 1) +
+        scale_color_manual(name="",values=c(實際值="black",預測值="dodgerblue3")) +
+        theme(legend.position="bottom") +
+        ggtitle('預測值與實際值比較(95%C.I.)')+
+        xlab("")+ylab("")
+
+# Mean Absolute Percentage Error
+# https://en.wikipedia.org/wiki/Mean_absolute_percentage_error
+(100/length(tmp$realValue))*sum(abs((tmp$realValue - tmp$fittedValue) / tmp$realValue))
+
+# Root Mean Square Error
+sqrt(sum((tmp$fittedValue - tmp$realValue)^2) / length(tmp$realValue))
+
+
+```
+
+
+## 結論
+
++ CCI大部份都在50-100之間，表示民眾長期對於未來經濟信心保守
+
++ 資料切點剛好在一波上升後，可能導致預測過度樂觀
+
+<br>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
